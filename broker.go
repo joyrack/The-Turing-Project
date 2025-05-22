@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"fmt"
 
 	"github.com/redis/go-redis/v9"
 	"github.com/rivo/tview"
@@ -12,33 +13,46 @@ type MessageBroker struct {
 	App     *tview.Application
 	Rdb     *redis.Client
 	Stream  string
-	Handler func(message Message)
+	Handler func(sender, content string)
 }
 
 var ctx = context.Background()
 
-// Helper function to convert redis.XMessage to application Message object
-func convertToMessage(msg redis.XMessage) Message {
-	var message Message
+func extractDetails(msg redis.XMessage) (sender string, content string, err error) {
 
-	if content, ok := msg.Values["content"].(string); ok {
-		message.Content = content
+	if contentVal, ok := msg.Values["content"].(string); ok {
+		content = contentVal
 	} else {
-		panic("Valid `content` attribute not found")
+		err = fmt.Errorf("no valid `content` field present in message")
 	}
 
-	if sender, ok := msg.Values["sender"].(string); ok {
-		message.Sender = sender
+	if senderVal, ok := msg.Values["sender"].(string); ok {
+		sender = senderVal
 	} else {
-		panic("Valid `sender` attribute not found")
+		err = fmt.Errorf("no valid `sender` field present in message")
 	}
-
-	return message
+	return
 }
 
 func (messageBroker *MessageBroker) processMessage(msg redis.XMessage) {
-	message := convertToMessage(msg)
-	messageBroker.Handler(message)
+	sender, content, err := extractDetails(msg)
+	if err != nil {
+		// Trace this ??
+		return
+	}
+	messageBroker.Handler(sender, content)
+}
+
+func (messageBroker *MessageBroker) SendMessage(sender, content string) {
+	_, err := messageBroker.Rdb.XAdd(ctx, &redis.XAddArgs{
+		Stream: messageBroker.Stream,
+		ID:     "*",
+		Values: []interface{}{"sender", sender, "content", content},
+	}).Result()
+
+	if err != nil {
+		panic(err) // TODO: Handle this more gracefully
+	}
 }
 
 // blocking operation - Do NOT call from the main thread
