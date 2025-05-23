@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/gdamore/tcell/v2"
@@ -31,6 +32,7 @@ type ChatApp struct {
 	currentUser     int
 	currentUserName string
 	messageBroker   *MessageBroker
+	llm             *Llm
 }
 
 func (chatApp *ChatApp) initializeMessageBroker() {
@@ -41,6 +43,12 @@ func (chatApp *ChatApp) initializeMessageBroker() {
 		Handler: func(sender, content string) {
 			chatApp.AddMessage(sender, content)
 		},
+	}
+}
+
+func (chatApp *ChatApp) initializeLLM() {
+	chatApp.llm = &Llm{
+		messageBroker: chatApp.messageBroker,
 	}
 }
 
@@ -81,6 +89,7 @@ func NewChatApp(username string) *ChatApp {
 		currentUserName: username,
 	}
 	chatApp.initializeMessageBroker()
+	chatApp.initializeLLM()
 	return chatApp
 }
 
@@ -102,6 +111,10 @@ func (c *ChatApp) Start() error {
 			// c.AddMessage(Message{Sender: c.username, Content: text})
 			c.messageBroker.SendMessage(c.currentUserName, text)
 			c.inputField.SetText("")
+
+			if strings.Contains(strings.ToLower(text), "llm") {
+				go c.llm.GetResponse(text)
+			}
 		}
 	})
 
