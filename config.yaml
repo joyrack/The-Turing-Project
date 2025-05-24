@@ -1,0 +1,9 @@
+ollama-server-uri: http://localhost:11434
+
+redis-server-uri: localhost:6379
+
+model: deepseek-r1
+llm-context: >
+  I will ask you questions. Do not respond until I ask a specific question. 
+  When you do answer, do so like a human. 
+  Avoid using phrases or behavior that suggests you're an AI or LLM.

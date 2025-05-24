@@ -8,18 +8,46 @@ import (
 	"github.com/rifaideen/talkative"
 )
 
-var llmClient *talkative.Client
-
-type Llm struct {
+type ChatSession struct {
+	client        *talkative.Client
+	messages      []talkative.ChatMessage
+	model         string
 	messageBroker *MessageBroker
 }
 
-// Blocking function - Do NOT call on the Main thread
-func (llm *Llm) GetResponse(query string) {
-	message := talkative.ChatMessage{
-		Role:    talkative.USER,
-		Content: query,
+func NewChatSession(model string, messageBroker *MessageBroker) (*ChatSession, error) {
+	config, err := GetSystemConfig()
+	if err != nil {
+		return nil, err
 	}
+
+	llmClient, err := talkative.New(config.OllamaServerUri)
+	if err != nil {
+		return nil, fmt.Errorf("error while creating LLM Client: %v", err)
+	}
+
+	messages := []talkative.ChatMessage{}
+	if config.LlmContext != "" {
+		messages = append(messages, talkative.ChatMessage{
+			Role:    "system",
+			Content: config.LlmContext,
+		})
+	}
+
+	return &ChatSession{
+		client:        llmClient,
+		messages:      messages,
+		model:         model,
+		messageBroker: messageBroker,
+	}, nil
+}
+
+// Blocking function - Do NOT call on the main thread
+func (cs *ChatSession) GenerateResponse(userMessage string) {
+	cs.messages = append(cs.messages, talkative.ChatMessage{
+		Role:    "user",
+		Content: userMessage,
+	})
 
 	var stringBuilder strings.Builder
 
@@ -36,25 +64,20 @@ func (llm *Llm) GetResponse(query string) {
 		}
 
 		stringBuilder.WriteString(response.Message.Content)
-		// llm.messageBroker.SendMessage("LLM", response.Message.Content)
 	}
 
-	done, err := llmClient.PlainChat("tinyllama", callback, nil, message)
+	// TODO: maybe try passing &ChatParams{Stream: true} - to get response in single shot
+	done, err := cs.client.PlainChat(cs.model, callback, nil, cs.messages...)
 	if err != nil {
 		panic(fmt.Sprintf("Chat error: %v", err))
 	}
 
 	<-done
-	llm.messageBroker.SendMessage("LLM", stringBuilder.String())
-}
-
-func init() {
-	var err error
-	llmClient, err = talkative.New("http://localhost:11434")
-	if err != nil {
-		panic(fmt.Sprintf("failed to create talkative client: %v", err))
-	} else {
-		fmt.Println("LLM client created successfully!")
-	}
-
+	// add the generated response to chat history
+	reply := stringBuilder.String()
+	cs.messages = append(cs.messages, talkative.ChatMessage{
+		Role:    "assistant",
+		Content: reply,
+	})
+	cs.messageBroker.SendMessage("LLM", reply)
 }

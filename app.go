@@ -28,11 +28,10 @@ type ChatApp struct {
 	inputField      *tview.InputField
 	layout          *tview.Flex
 	username        string
-	otherUsernames  []string
 	currentUser     int
 	currentUserName string
 	messageBroker   *MessageBroker
-	llm             *Llm
+	chatSession     *ChatSession
 }
 
 func (chatApp *ChatApp) initializeMessageBroker() {
@@ -47,8 +46,13 @@ func (chatApp *ChatApp) initializeMessageBroker() {
 }
 
 func (chatApp *ChatApp) initializeLLM() {
-	chatApp.llm = &Llm{
-		messageBroker: chatApp.messageBroker,
+	config, err := GetSystemConfig()
+	if err != nil {
+		panic(err)
+	}
+	chatApp.chatSession, err = NewChatSession(config.Model, chatApp.messageBroker)
+	if err != nil {
+		panic(err)
 	}
 }
 
@@ -74,17 +78,13 @@ func NewChatApp(username string) *ChatApp {
 		AddItem(messageView, 0, 1, false).
 		AddItem(inputField, 3, 0, true)
 
-	// Sample users
-	otherUsernames := []string{"Alice", "Bob", "Charlie"}
-
 	chatApp := &ChatApp{
 		app:             app,
 		messages:        []Message{},
 		messageView:     messageView,
 		inputField:      inputField,
 		layout:          layout,
-		username:        "You",
-		otherUsernames:  otherUsernames,
+		username:        "You", // Joe Goldberg much??
 		currentUser:     0,
 		currentUserName: username,
 	}
@@ -112,8 +112,8 @@ func (c *ChatApp) Start() error {
 			c.messageBroker.SendMessage(c.currentUserName, text)
 			c.inputField.SetText("")
 
-			if strings.Contains(strings.ToLower(text), "llm") {
-				go c.llm.GetResponse(text)
+			if strings.Contains(strings.ToLower(text), "..") {
+				go c.chatSession.GenerateResponse(text)
 			}
 		}
 	})
@@ -179,9 +179,15 @@ func main() {
 
 func init() {
 	// initialize the redis client & establish connection
+	config, err := GetSystemConfig()
+	if err != nil {
+		panic(err)
+	}
+
 	rdb = redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
+		Addr:     config.RedisServerUri,
 		Password: "",
 		DB:       0,
 	})
+
 }
