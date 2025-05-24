@@ -32,6 +32,7 @@ type ChatApp struct {
 	currentUserName string
 	messageBroker   *MessageBroker
 	chatSession     *ChatSession
+	welcomeModal    *tview.Modal // Add welcome modal
 }
 
 func (chatApp *ChatApp) initializeMessageBroker() {
@@ -78,6 +79,20 @@ func NewChatApp(username string) *ChatApp {
 		AddItem(messageView, 0, 1, false).
 		AddItem(inputField, 3, 0, true)
 
+	// Create welcome modal
+	welcomeModal := tview.NewModal().
+		SetText("Welcome to CLI-Chat!\n\nPress Start to begin chatting.").
+		AddButtons([]string{"Start Chatting", "Quit"}).
+		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+			if buttonLabel == "Start Chatting" {
+				app.SetRoot(layout, true).SetFocus(inputField)
+			} else {
+				app.Stop()
+			}
+		})
+	welcomeModal.SetBorder(true).
+		SetBackgroundColor(tcell.ColorDefault)
+
 	chatApp := &ChatApp{
 		app:             app,
 		messages:        []Message{},
@@ -87,6 +102,7 @@ func NewChatApp(username string) *ChatApp {
 		username:        "You", // Joe Goldberg much??
 		currentUser:     0,
 		currentUserName: username,
+		welcomeModal:    welcomeModal,
 	}
 	chatApp.initializeMessageBroker()
 	chatApp.initializeLLM()
@@ -130,8 +146,8 @@ func (c *ChatApp) Start() error {
 	// Start the message broker on a seperate goroutine
 	go c.messageBroker.StartListening()
 
-	// Start the application
-	return c.app.SetRoot(c.layout, true).Run()
+	// Show welcome modal first, then switch to chat layout
+	return c.app.SetRoot(c.welcomeModal, true).Run()
 }
 
 // AddMessage adds a new message to the chat history

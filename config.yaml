@@ -1,8 +1,8 @@
-ollama-server-uri: http://localhost:11434
+ollama-server-uri: http://127.0.0.1:11434
 
 redis-server-uri: localhost:6379
 
-model: deepseek-r1
+model: qwen3-4b
 llm-context: >
   I will ask you questions. Do not respond until I ask a specific question. 
   When you do answer, do so like a human. 

@@ -66,6 +66,11 @@ func (cs *ChatSession) GenerateResponse(userMessage string) {
 		stringBuilder.WriteString(response.Message.Content)
 	}
 
+	config, ercallbackr := GetSystemConfig()
+	if ercallbackr != nil {
+		panic(fmt.Sprintf("Error getting system config: %v", ercallbackr))
+	}
+	fmt.Println("uri:", config.OllamaServerUri)
 	// TODO: maybe try passing &ChatParams{Stream: true} - to get response in single shot
 	done, err := cs.client.PlainChat(cs.model, callback, nil, cs.messages...)
 	if err != nil {
