@@ -23,11 +23,35 @@ func (role Role) String() string {
 	}
 }
 
+func (role Role) Other() Role {
+	if role == QUESTIONER {
+		return ANSWERER
+	} else {
+		return QUESTIONER
+	}
+}
+
 // data model
 type Player struct {
 	Id       string
 	Username string
 	Role     Role
+}
+
+func (player *Player) IsValid() (bool, error) {
+	_, err := strconv.Atoi(player.Id)
+	if err != nil {
+		return false, fmt.Errorf("invalid player id: %s", player.Id)
+	}
+
+	if player.Role != QUESTIONER && player.Role != ANSWERER {
+		return false, fmt.Errorf("invalid player role")
+	}
+
+	if player.Username == "" {
+		return false, fmt.Errorf("invalid player username. username cannot be empty")
+	}
+	return true, nil
 }
 
 type Message struct {
@@ -155,6 +179,40 @@ func (playerModel *PlayerModel) GetNextPlayerId() (string, error) {
 	}
 
 	return strconv.FormatInt(id, 10), nil
+}
+
+// Blocking function
+func (playerModel *PlayerModel) FindOpponent(player *Player) (*Connection, error) {
+	if ok, err := player.IsValid(); !ok {
+		return nil, fmt.Errorf("error in finding opponent: %w", err)
+	}
+	_, err := playerModel.client.LPush(playerModel.ctx, player.Role.String(), player.Id).Result()
+	if err != nil {
+		return nil, err
+	}
+
+	opponentId, err := playerModel.client.RPop(playerModel.ctx, player.Role.Other().String()).Result()
+	if err == redis.Nil {
+		res, er := playerModel.client.BRPop(playerModel.ctx, 0, player.Role.Other().String()).Result()
+		if er != nil {
+			return nil, er
+		}
+
+		if len(res) == 0 {
+			return nil, fmt.Errorf("could not find any opponent")
+		}
+		opponentId = res[0]
+	} else if err != nil {
+		return nil, fmt.Errorf("error in trying to find opponent: %w", err)
+	}
+
+	var conn *Connection
+	if player.Role == QUESTIONER {
+		conn = &Connection{questionerId: player.Id, answererId: opponentId}
+	} else {
+		conn = &Connection{questionerId: opponentId, answererId: player.Id}
+	}
+	return conn, nil
 }
 
 func convertToMessage(msg *redis.XMessage) (*Message, error) {

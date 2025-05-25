@@ -10,6 +10,10 @@ type welcomeScreen struct {
 	welcomeDialog *tview.Modal
 }
 
+type loadingScreen struct {
+	loadingWidget *tview.TextView
+}
+
 type chatScreen struct {
 	messageView *tview.TextView
 	inputField  *tview.InputField
@@ -19,10 +23,11 @@ type chatScreen struct {
 // manages the UI components
 type PlayerView struct {
 	app           *tview.Application
+	username      string
 	controller    PlayerController
 	welcomeScreen *welcomeScreen
+	loadingScreen *loadingScreen
 	chatScreen    *chatScreen
-	username      string
 }
 
 func NewPlayerView(username string, app *tview.Application) *PlayerView {
@@ -31,6 +36,9 @@ func NewPlayerView(username string, app *tview.Application) *PlayerView {
 		username: username,
 		welcomeScreen: &welcomeScreen{
 			welcomeDialog: tview.NewModal(),
+		},
+		loadingScreen: &loadingScreen{
+			loadingWidget: tview.NewTextView(),
 		},
 		chatScreen: &chatScreen{
 			messageView: tview.NewTextView(),
@@ -53,16 +61,21 @@ func (v *PlayerView) setupUI() {
 		AddButtons([]string{models.QUESTIONER.String(), models.ANSWERER.String()}).
 		SetDoneFunc(func(_ int, buttonLabel string) {
 			if buttonLabel == models.QUESTIONER.String() {
-				v.controller.SetPlayerRole(models.QUESTIONER)
-				v.app.SetRoot(v.chatScreen.layout, true).SetFocus(v.chatScreen.inputField)
+				v.controller.InitializeGame(v.username, models.QUESTIONER)
+				// v.app.SetRoot(v.chatScreen.layout, true).SetFocus(v.chatScreen.inputField)
+				v.app.SetRoot(v.loadingScreen.loadingWidget, true)
 			} else if buttonLabel == models.ANSWERER.String() {
-				v.controller.SetPlayerRole(models.ANSWERER)
-				v.app.SetRoot(v.chatScreen.layout, true).SetFocus(v.chatScreen.inputField)
+				v.controller.InitializeGame(v.username, models.ANSWERER)
+				// v.app.SetRoot(v.chatScreen.layout, true).SetFocus(v.chatScreen.inputField)
+				v.app.SetRoot(v.loadingScreen.loadingWidget, true)
 			} else {
 				// controller.cleanup()
 				v.app.Stop()
 			}
 		})
+
+	v.loadingScreen.loadingWidget.
+		SetTitle("Loading...")
 
 	v.chatScreen.messageView.
 		SetDynamicColors(true).
@@ -86,7 +99,7 @@ func (v *PlayerView) setupUI() {
 				return
 			}
 
-			v.controller.AddMessage(models.Message{Sender: v.username, Content: text})
+			v.controller.AddMessage(&models.Message{Sender: v.username, Content: text})
 			v.chatScreen.inputField.SetText("")
 		}
 	})
