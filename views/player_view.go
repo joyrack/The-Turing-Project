@@ -1,6 +1,10 @@
 package views
 
 import (
+	"fmt"
+	"log/slog"
+	"time"
+
 	"github.com/gdamore/tcell/v2"
 	"github.com/joyrack/cli-chat/models"
 	"github.com/rivo/tview"
@@ -11,7 +15,7 @@ type welcomeScreen struct {
 }
 
 type loadingScreen struct {
-	loadingWidget *tview.TextView
+	loadingWidget *tview.Modal
 }
 
 type chatScreen struct {
@@ -38,7 +42,7 @@ func NewPlayerView(username string, app *tview.Application) *PlayerView {
 			welcomeDialog: tview.NewModal(),
 		},
 		loadingScreen: &loadingScreen{
-			loadingWidget: tview.NewTextView(),
+			loadingWidget: tview.NewModal(),
 		},
 		chatScreen: &chatScreen{
 			messageView: tview.NewTextView(),
@@ -61,12 +65,14 @@ func (v *PlayerView) setupUI() {
 		AddButtons([]string{models.QUESTIONER.String(), models.ANSWERER.String()}).
 		SetDoneFunc(func(_ int, buttonLabel string) {
 			if buttonLabel == models.QUESTIONER.String() {
-				v.controller.InitializeGame(v.username, models.QUESTIONER)
+				go v.controller.InitializeGame(v.username, models.QUESTIONER)
 				// v.app.SetRoot(v.chatScreen.layout, true).SetFocus(v.chatScreen.inputField)
+				slog.Info("Displaying loading screen to Questioner")
 				v.app.SetRoot(v.loadingScreen.loadingWidget, true)
 			} else if buttonLabel == models.ANSWERER.String() {
-				v.controller.InitializeGame(v.username, models.ANSWERER)
+				go v.controller.InitializeGame(v.username, models.ANSWERER)
 				// v.app.SetRoot(v.chatScreen.layout, true).SetFocus(v.chatScreen.inputField)
+				slog.Info("Displaying loading screen to Answerer")
 				v.app.SetRoot(v.loadingScreen.loadingWidget, true)
 			} else {
 				// controller.cleanup()
@@ -75,7 +81,7 @@ func (v *PlayerView) setupUI() {
 		})
 
 	v.loadingScreen.loadingWidget.
-		SetTitle("Loading...")
+		SetText("This is the loading screen")
 
 	v.chatScreen.messageView.
 		SetDynamicColors(true).
@@ -92,6 +98,11 @@ func (v *PlayerView) setupUI() {
 		SetBorder(true).
 		SetTitle("Input")
 
+	v.chatScreen.layout.
+		SetDirection(tview.FlexRow).
+		AddItem(v.chatScreen.messageView, 0, 1, false).
+		AddItem(v.chatScreen.inputField, 3, 0, true)
+
 	v.chatScreen.inputField.SetDoneFunc(func(key tcell.Key) {
 		if key == tcell.KeyEnter {
 			text := v.chatScreen.inputField.GetText()
@@ -103,4 +114,36 @@ func (v *PlayerView) setupUI() {
 			v.chatScreen.inputField.SetText("")
 		}
 	})
+
+	v.app.SetRoot(v.welcomeScreen.welcomeDialog, true)
+}
+
+func (v *PlayerView) StartGame() {
+	slog.Info("Starting game")
+	v.app.SetRoot(v.chatScreen.layout, true).SetFocus(v.chatScreen.inputField)
+	go v.controller.StartListeningForMessages()
+}
+
+func (v *PlayerView) UpdateMessageView(msg *models.Message) {
+	timestamp := time.Now().Format("15:04:05")
+
+	var color string
+	switch msg.Sender {
+	case v.username:
+		color = "[green]"
+	case "System":
+		color = "[yellow]"
+	default:
+		color = "[blue]"
+	}
+
+	formattedMsg := fmt.Sprintf("%s %s%s[white]: %s\n",
+		timestamp, color, msg.Sender, msg.Content)
+
+	v.chatScreen.messageView.Write([]byte(formattedMsg))
+	v.chatScreen.messageView.ScrollToEnd()
+}
+
+func (v *PlayerView) App() *tview.Application {
+	return v.app
 }

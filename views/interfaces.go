@@ -6,4 +6,5 @@ import "github.com/joyrack/cli-chat/models"
 type PlayerController interface {
 	InitializeGame(string, models.Role)
 	AddMessage(*models.Message)
+	StartListeningForMessages()
 }

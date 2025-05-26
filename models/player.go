@@ -3,7 +3,9 @@ package models
 import (
 	"context"
 	"fmt"
+	"log/slog"
 	"strconv"
+	"strings"
 
 	"github.com/redis/go-redis/v9"
 )
@@ -58,6 +60,10 @@ type Message struct {
 	Sender  string
 	Content string
 	id      string
+}
+
+func (msg *Message) Id() string {
+	return msg.id
 }
 
 type Connection struct {
@@ -186,6 +192,7 @@ func (playerModel *PlayerModel) FindOpponent(player *Player) (*Connection, error
 	if ok, err := player.IsValid(); !ok {
 		return nil, fmt.Errorf("error in finding opponent: %w", err)
 	}
+	slog.Info("Adding to waiting queue", "Queue", player.Role.String(), "Value", player.Id)
 	_, err := playerModel.client.LPush(playerModel.ctx, player.Role.String(), player.Id).Result()
 	if err != nil {
 		return nil, err
@@ -193,7 +200,9 @@ func (playerModel *PlayerModel) FindOpponent(player *Player) (*Connection, error
 
 	opponentId, err := playerModel.client.RPop(playerModel.ctx, player.Role.Other().String()).Result()
 	if err == redis.Nil {
+		slog.Info("Waiting for opponent...")
 		res, er := playerModel.client.BRPop(playerModel.ctx, 0, player.Role.Other().String()).Result()
+		slog.Info("Found", "res", strings.Join(res, ","))
 		if er != nil {
 			return nil, er
 		}
@@ -201,11 +210,12 @@ func (playerModel *PlayerModel) FindOpponent(player *Player) (*Connection, error
 		if len(res) == 0 {
 			return nil, fmt.Errorf("could not find any opponent")
 		}
-		opponentId = res[0]
+		opponentId = res[1]
 	} else if err != nil {
 		return nil, fmt.Errorf("error in trying to find opponent: %w", err)
 	}
 
+	slog.Info("Opponent found", "opponent_id", opponentId)
 	var conn *Connection
 	if player.Role == QUESTIONER {
 		conn = &Connection{questionerId: player.Id, answererId: opponentId}
@@ -234,5 +244,5 @@ func convertToMessage(msg *redis.XMessage) (*Message, error) {
 		return nil, fmt.Errorf("content field cannot be empty")
 	}
 
-	return &Message{Sender: sender, Content: content}, nil
+	return &Message{Sender: sender, Content: content, id: msg.ID}, nil
 }
