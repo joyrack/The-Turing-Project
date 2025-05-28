@@ -11,10 +11,16 @@ import (
 )
 
 type Role int
+type GameMode int
 
 const (
 	QUESTIONER Role = iota
 	ANSWERER
+)
+
+const (
+	HUMAN GameMode = iota
+	MACHINE
 )
 
 func (role Role) String() string {
@@ -30,6 +36,14 @@ func (role Role) Other() Role {
 		return ANSWERER
 	} else {
 		return QUESTIONER
+	}
+}
+
+func (mode GameMode) String() string {
+	if mode == HUMAN {
+		return "Human"
+	} else {
+		return "Machine"
 	}
 }
 
@@ -72,34 +86,8 @@ type Connection struct {
 	id           string
 }
 
-func (conn *Connection) Id() (string, error) {
-	if conn.id != "" {
-		return conn.id, nil
-	}
-
-	if conn.questionerId == "" || conn.answererId == "" {
-		return "", fmt.Errorf("could not create get connection ID due to incomplete connection data")
-	}
-
-	questionerId, err := strconv.Atoi(conn.questionerId)
-	if err != nil {
-		return "", fmt.Errorf("invalid connection: QuestionerId = %s. %v", conn.questionerId, err)
-	}
-	answererId, err := strconv.Atoi(conn.answererId)
-	if err != nil {
-		return "", fmt.Errorf("invalid connection: AnsweredId = %s. %v", conn.answererId, err)
-	}
-
-	if questionerId == answererId {
-		return "", fmt.Errorf("invalid connection. Both QuestionerId & AnswererId equal to %d", questionerId)
-	}
-
-	if questionerId < answererId {
-		conn.id = conn.questionerId + ":" + conn.answererId
-	} else {
-		conn.id = conn.answererId + ":" + conn.questionerId
-	}
-	return conn.id, nil
+func (conn *Connection) Id() string {
+	return conn.id
 }
 
 // Handles all database operations
@@ -117,10 +105,7 @@ func NewPlayerModel(client *redis.Client) *PlayerModel {
 
 // database specific operations
 func (playerModel *PlayerModel) AddToStream(conn *Connection, msg *Message) (string, error) {
-	stream, err := conn.Id()
-	if err != nil {
-		return "", fmt.Errorf("unable to add message to stream. %w", err)
-	}
+	stream := conn.Id()
 
 	id, err := playerModel.client.XAdd(playerModel.ctx, &redis.XAddArgs{
 		Stream: stream,
@@ -138,10 +123,7 @@ func (playerModel *PlayerModel) AddToStream(conn *Connection, msg *Message) (str
 
 // Blocking function
 func (playerModel *PlayerModel) GetFromStream(conn *Connection, lastMessageId string) (*Message, error) {
-	stream, err := conn.Id()
-	if err != nil {
-		return nil, fmt.Errorf("unable to read from stream. %w", err)
-	}
+	stream := conn.Id()
 
 	res, err := playerModel.client.XRead(playerModel.ctx, &redis.XReadArgs{
 		Block:   0,
@@ -187,6 +169,31 @@ func (playerModel *PlayerModel) GetNextPlayerId() (string, error) {
 	return strconv.FormatInt(id, 10), nil
 }
 
+func (playerModel *PlayerModel) CreateConnection(questionerId string, answererId string) (*Connection, error) {
+	if questionerId == "" || answererId == "" {
+		return nil, fmt.Errorf("invalid parameters - both questionerId & answererId should be a non-empty string")
+	}
+
+	qId, err := strconv.Atoi(questionerId)
+	if err != nil {
+		return nil, fmt.Errorf("invalid questionerId: %s. error - %w", questionerId, err)
+	}
+
+	aId, err := strconv.Atoi(answererId)
+	if err != nil {
+		return nil, fmt.Errorf("invalid answererId: %s. error - %w", answererId, err)
+	}
+
+	var id string
+	if qId < aId {
+		id = questionerId + ":" + answererId
+	} else {
+		id = answererId + ":" + questionerId
+	}
+
+	return &Connection{questionerId: questionerId, answererId: answererId, id: id}, nil
+}
+
 // Blocking function
 func (playerModel *PlayerModel) FindOpponent(player *Player) (*Connection, error) {
 	if ok, err := player.IsValid(); !ok {
@@ -218,11 +225,12 @@ func (playerModel *PlayerModel) FindOpponent(player *Player) (*Connection, error
 	slog.Info("Opponent found", "opponent_id", opponentId)
 	var conn *Connection
 	if player.Role == QUESTIONER {
-		conn = &Connection{questionerId: player.Id, answererId: opponentId}
+		conn, err = playerModel.CreateConnection(player.Id, opponentId)
 	} else {
-		conn = &Connection{questionerId: opponentId, answererId: player.Id}
+		conn, err = playerModel.CreateConnection(opponentId, player.Id)
 	}
-	return conn, nil
+
+	return conn, err
 }
 
 func convertToMessage(msg *redis.XMessage) (*Message, error) {

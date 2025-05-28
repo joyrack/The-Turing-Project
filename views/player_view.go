@@ -110,7 +110,7 @@ func (v *PlayerView) setupUI() {
 				return
 			}
 
-			v.controller.AddMessage(&models.Message{Sender: v.username, Content: text})
+			go v.controller.AddMessage(&models.Message{Sender: v.username, Content: text})
 			v.chatScreen.inputField.SetText("")
 		}
 	})
