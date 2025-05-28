@@ -7,4 +7,5 @@ type PlayerController interface {
 	InitializeGame(string, models.Role)
 	AddMessage(*models.Message)
 	StartListeningForMessages()
+	GetOpponentType() string // Add method to reveal opponent type
 }

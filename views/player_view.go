@@ -26,12 +26,15 @@ type chatScreen struct {
 
 // manages the UI components
 type PlayerView struct {
-	app           *tview.Application
-	username      string
-	controller    PlayerController
-	welcomeScreen *welcomeScreen
-	loadingScreen *loadingScreen
-	chatScreen    *chatScreen
+	app             *tview.Application
+	username        string
+	controller      PlayerController
+	welcomeScreen   *welcomeScreen
+	loadingScreen   *loadingScreen
+	chatScreen      *chatScreen
+	messageCount    int  // Track number of messages sent
+	maxMessages     int  // Maximum allowed messages
+	endGamePrompted bool // To avoid multiple prompts
 }
 
 func NewPlayerView(username string, app *tview.Application) *PlayerView {
@@ -49,6 +52,7 @@ func NewPlayerView(username string, app *tview.Application) *PlayerView {
 			inputField:  tview.NewInputField(),
 			layout:      tview.NewFlex(),
 		},
+		maxMessages: 10,
 	}
 
 	view.setupUI()
@@ -109,8 +113,18 @@ func (v *PlayerView) setupUI() {
 			if text == "" {
 				return
 			}
-
+			if v.messageCount >= v.maxMessages {
+				if !v.endGamePrompted {
+					v.endGamePrompted = true
+					v.promptGuessOpponent()
+				}
+				return
+			}
 			go v.controller.AddMessage(&models.Message{Sender: v.username, Content: text})
+			v.messageCount++
+			if v.messageCount >= v.maxMessages {
+				v.promptGuessOpponent()
+			}
 			v.chatScreen.inputField.SetText("")
 		}
 	})
@@ -142,6 +156,45 @@ func (v *PlayerView) UpdateMessageView(msg *models.Message) {
 
 	v.chatScreen.messageView.Write([]byte(formattedMsg))
 	v.chatScreen.messageView.ScrollToEnd()
+}
+
+// Add new method to prompt for opponent guess
+func (v *PlayerView) promptGuessOpponent() {
+	modal := tview.NewModal().
+		SetText("You have reached the message limit! Who do you think your opponent was?").
+		AddButtons([]string{"Human", "LLM"}).
+		SetDoneFunc(func(_ int, buttonLabel string) {
+			v.revealOpponentResult(buttonLabel)
+		})
+	v.app.QueueUpdateDraw(func() {
+		v.app.SetRoot(modal, true)
+	})
+}
+
+// Add new method to reveal the result
+func (v *PlayerView) revealOpponentResult(guess string) {
+	// Ask controller for the real answer
+	var real string
+	if v.controller != nil {
+		real = v.controller.GetOpponentType()
+	} else {
+		real = "Unknown"
+	}
+	result := ""
+	if guess == real {
+		result = "Correct! Your guess was right."
+	} else {
+		result = "Incorrect! Your guess was wrong."
+	}
+	modal := tview.NewModal().
+		SetText(result + "\nOpponent was: " + real).
+		AddButtons([]string{"OK"}).
+		SetDoneFunc(func(_ int, _ string) {
+			v.app.Stop()
+		})
+	v.app.QueueUpdateDraw(func() {
+		v.app.SetRoot(modal, true)
+	})
 }
 
 func (v *PlayerView) App() *tview.Application {

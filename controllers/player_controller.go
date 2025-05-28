@@ -136,6 +136,14 @@ func (controller *PlayerController) AddMessage(msg *models.Message) {
 
 }
 
+// Add method to reveal opponent type
+func (controller *PlayerController) GetOpponentType() string {
+	if controller.gameMode == models.MACHINE {
+		return "LLM"
+	}
+	return "Human"
+}
+
 // Blocking method
 func (controller *PlayerController) StartListeningForMessages() {
 	slog.Info("Listening to messages now")

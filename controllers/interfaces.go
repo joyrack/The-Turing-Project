@@ -10,4 +10,5 @@ type PlayerView interface {
 	App() *tview.Application
 	StartGame()
 	UpdateMessageView(msg *models.Message)
+	promptGuessOpponent() // For testability, add to interface
 }
